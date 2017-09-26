@@ -1,9 +1,13 @@
 #!/usr/bin/env python3.6
 
 import argparse
+import base64
+import contextlib
+import io
 import time
 import os
 import os.path
+import sys
 
 import requests
 import ujson as json
@@ -18,6 +22,52 @@ class Exit(Exception):
 
 def bold(text):
     return f"\033[1m{text}\033[0m"
+
+
+class TooBig(ValueError):
+    ...
+
+
+def stream_image(img_response):
+    MAX_LENGTH = 1 * 1000 * 1000
+    CHUNK_READ_SIZE = 1024  # arbitrary afaict
+
+    data = io.BytesIO()
+    content_length = img_response.headers.get('Content-Length')
+    if content_length and int(content_length) > MAX_LENGTH:
+        raise TooBig("Too big")
+
+    size = 0
+    for chunk in img_response.iter_content(CHUNK_READ_SIZE):
+        size += len(chunk)
+        if size > MAX_LENGTH:
+            raise TooBig("Too big")
+
+        data.write(chunk)
+    return data
+
+
+def imgcat(data):
+    osc = b'\033]'
+    st = b'\a'
+
+    buf = bytes()
+
+    buf += osc
+    dims = 'width=auto;height=auto'
+
+    buf += b'1337;File=name='
+    buf += base64.b64encode(b"this file's name")
+    buf += f';size={len(data)};inline=1;{dims}:'.encode('utf8')
+    buf += base64.b64encode(data) + st
+
+    if hasattr(sys.stdout, 'buffer'):
+        sys.stdout.buffer.write(buf)
+    else:
+        sys.stdout.write(buf)
+    sys.stdout.flush()
+
+    print()
 
 
 def get_api(path, hipchat_org, token):
@@ -147,6 +197,21 @@ def get_unread(args, hipchat_org, token):
             print('\n')
 
 
+def get_emoticon(args, hipchat_org, token):
+    payload = get_api(
+        path=f'v2/emoticon/{args.emoticon_name}',
+        hipchat_org=hipchat_org,
+        token=token,
+    )
+
+    with contextlib.closing(requests.get(payload['url'], stream=True)) as img_response:
+        data = stream_image(img_response).getvalue()
+
+    imgcat(data)
+    print("Url:     ", payload['url'])
+    print("Creator: ", payload['creator']['name'])
+
+
 def main():
     token = os.environ.get('HIPCHAT_TOKEN')
     hipchat_org = os.environ.get('HIPCHAT_ORG')
@@ -165,6 +230,10 @@ def main():
 
     unread_parser = subparsers.add_parser('unread', help="get unread messages")
     unread_parser.set_defaults(func=get_unread)
+
+    emoticon_parser = subparsers.add_parser('emoticon', help="show emoticon")
+    emoticon_parser.add_argument('emoticon_name', type=str)
+    emoticon_parser.set_defaults(func=get_emoticon)
 
     args = parser.parse_args()
     try:
