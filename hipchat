@@ -1,0 +1,177 @@
+#!/usr/bin/env python3.6
+
+import argparse
+import time
+import os
+import os.path
+
+import requests
+import ujson as json
+
+
+xmpp_cache_loc = os.path.join(os.path.dirname(__file__), 'data/hipchat_xmpp_cache.json')
+
+
+class Exit(Exception):
+    pass
+
+
+def bold(text):
+    return f"\033[1m{text}\033[0m"
+
+
+def get_api(path, hipchat_org, token):
+    response = requests.get(
+        f'https://{hipchat_org}.hipchat.com/{path}',
+        headers={'Authorization': f'Bearer {token}'},
+    )
+    if response.status_code == 401:
+        print("Authentication error! Make sure you are using a valid HIPCHAT_TOKEN.")
+        raise Exit
+    response.raise_for_status()
+    return response.json()
+
+
+def get_by_xmpp_jid(xmpp_lookup, xmpp_jid):
+    return xmpp_lookup.get(xmpp_jid)
+
+
+def get_xmpp_cache(hipchat_org, token):
+    try:
+        with open(xmpp_cache_loc, 'r') as f:
+            return json.load(f)['data']
+    except (OSError, ValueError):
+        return refresh_xmpp_cache(hipchat_org, token)
+
+
+def save_xmpp_cache(cache):
+    print(xmpp_cache_loc)
+    with open(xmpp_cache_loc, 'w') as f:
+        json.dump({'data': cache, 'timestamp': int(time.time())}, f)
+
+
+def refresh_xmpp_cache(hipchat_org, token):
+    print("Fetching xmpp data...")
+    payload = get_api(
+        path='v2/room?expand=items&max-results=1000',
+        hipchat_org=hipchat_org,
+        token=token,
+    )
+    xmpp_lookup = {
+        item['xmpp_jid']: {
+            'type': 'room',
+            'topic': item['topic'],
+            'privacy': item['privacy'],
+            'name': item['name'],
+            'owner': item['owner'],
+            'created': item['created'],
+            'id': item['id'],
+            'is_archived': item['is_archived'],
+            'last_active': item['last_active'],
+        }
+        for item in payload['items']
+    }
+
+    payload = get_api(
+        path='v2/user?expand=items&max-results=1000',
+        hipchat_org=hipchat_org,
+        token=token,
+    )
+    xmpp_lookup.update({
+        item['xmpp_jid']: {
+            'type': 'user',
+            'name': item['name'],
+            'mention_name': item['mention_name'],
+            'id': item['id'],
+        }
+        for item in payload['items']
+    })
+    save_xmpp_cache(xmpp_lookup)
+    return xmpp_lookup
+
+
+def get_room_data(args, hipchat_org, token):
+    payload = get_api(
+        path=f'v2/room/{args.room_name}',
+        hipchat_org=hipchat_org,
+        token=token,
+    )
+
+    print("Id:      ", payload['id'])
+    print("Name:    ", payload['name'])
+    print("Owner:   ", payload['owner']['name'])
+    print("Created: ", payload['created'])
+
+
+def get_unread(args, hipchat_org, token):
+    del args
+    payload = get_api(
+        path='v2/readstate?expand=items.unreadCount',
+        hipchat_org=hipchat_org,
+        token=token,
+    )
+    unread = (
+        item for item in payload['items']
+        if item.get('unreadCount', {}).get('count')
+    )
+
+    cache = get_xmpp_cache(hipchat_org=hipchat_org, token=token)
+
+    for state in unread:
+        convo = cache.get(state['xmppJid'])
+
+        if not convo:
+            print(state)
+            continue
+
+        mid = state['mid']
+        payload = get_api(
+            path=f"v2/{convo['type']}/{convo['id']}/history/latest?not-before={mid}",
+            hipchat_org=hipchat_org,
+            token=token,
+        )
+        messages = []
+        for message in payload['items']:
+            # don't report on cards
+            if message.get('card'):
+                continue
+            sender = message['from']
+            if isinstance(sender, dict):
+                sender = sender['name']
+            messages.append(f"{sender}: {message['message']}")
+
+        if messages:
+            print(bold(convo['name']))
+            for message in messages:
+                print(message)
+            print('\n')
+
+
+def main():
+    token = os.environ.get('HIPCHAT_TOKEN')
+    hipchat_org = os.environ.get('HIPCHAT_ORG')
+    if not token or not hipchat_org:
+        print("Please make sure both HIPCHAT_TOKEN and HIPCHAT_ORG environment variables are set.")
+        return
+
+    parser = argparse.ArgumentParser(description="view hipchat data")
+
+    subparsers = parser.add_subparsers(dest='cmd')
+    subparsers.required = True
+
+    room_parser = subparsers.add_parser('room', help="view room data")
+    room_parser.add_argument('room_name', type=str)
+    room_parser.set_defaults(func=get_room_data)
+
+    unread_parser = subparsers.add_parser('unread', help="get unread messages")
+    unread_parser.set_defaults(func=get_unread)
+
+    args = parser.parse_args()
+    try:
+        args.func(args, hipchat_org=hipchat_org, token=token)
+    except Exit:
+        pass
+
+
+if __name__ == '__main__':
+    main()
