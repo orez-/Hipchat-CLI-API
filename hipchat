@@ -4,10 +4,11 @@ import argparse
 import base64
 import contextlib
 import io
-import time
 import os
 import os.path
+import re
 import sys
+import time
 
 import requests
 import ujson as json
@@ -205,11 +206,19 @@ def get_emoticon(args, hipchat_org, token):
     )
 
     with contextlib.closing(requests.get(payload['url'], stream=True)) as img_response:
+        last_modified = img_response.headers.get('Last-Modified')
         data = stream_image(img_response).getvalue()
+
+    # very rough heuristic, but it's all we've got: if the url contains
+    # an organization id it is custom, otherwise it is built-in.
+    # Emoticons are only supposed to contain alphanumeric characters
+    is_custom = bool(re.search(r'/emoticons/(\d+)/', payload['url']))
+    creator = payload['creator']['name']
 
     imgcat(data)
     print("Url:     ", payload['url'])
-    print("Creator: ", payload['creator']['name'])
+    print("Creator: ", creator if is_custom else f"{creator} (built-in)")
+    print("Added on:", last_modified or 'unknown')
 
 
 def main():
