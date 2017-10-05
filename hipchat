@@ -213,11 +213,11 @@ def get_emoticon(args, hipchat_org, token):
     # an organization id it is custom, otherwise it is built-in.
     # Emoticons are only supposed to contain alphanumeric characters
     is_custom = bool(re.search(r'/emoticons/(\d+)/', payload['url']))
-    creator = payload['creator']['name']
+    creator = (payload.get('creator') or {}).get('name') or '< unknown >'
 
     imgcat(data)
     print("Url:     ", payload['url'])
-    print("Creator: ", creator if is_custom else f"{creator} (built-in)")
+    print("Creator: ", creator if is_custom else f"{creator} (built-in)"),
     print("Added on:", last_modified or 'unknown')
 
 
