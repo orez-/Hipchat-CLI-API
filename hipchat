@@ -11,7 +11,11 @@ import sys
 import time
 
 import requests
-import ujson as json
+
+try:
+    import ujson as json
+except ImportError:
+    import json
 
 
 xmpp_cache_loc = os.path.join(os.path.dirname(__file__), 'data/hipchat_xmpp_cache.json')
