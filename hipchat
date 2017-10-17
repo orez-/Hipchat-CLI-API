@@ -53,12 +53,14 @@ def stream_image(img_response):
 
 
 def imgcat(data):
-    osc = b'\033]'
-    st = b'\a'
+    if 'TMUX' in os.environ:
+        osc = b'\033Ptmux;\033\033]'
+        st = b'\a\033\\'
+    else:
+        osc = b'\033]'
+        st = b'\a'
 
-    buf = bytes()
-
-    buf += osc
+    buf = osc
     dims = 'width=auto;height=auto'
 
     buf += b'1337;File=name='
