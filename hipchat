@@ -101,6 +101,8 @@ def get_xmpp_cache(hipchat_org, token):
 
 def save_xmpp_cache(cache):
     print(xmpp_cache_loc)
+    if not os.path.exists(os.path.dirname(xmpp_cache_loc)):
+        os.makedirs(os.path.dirname(xmpp_cache_loc))
     with open(xmpp_cache_loc, 'w') as f:
         json.dump({'data': cache, 'timestamp': int(time.time())}, f)
 
