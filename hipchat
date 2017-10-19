@@ -9,6 +9,7 @@ import os.path
 import re
 import sys
 import time
+import typing
 
 import requests
 
@@ -30,7 +31,7 @@ def bold(text):
 
 
 class TooBig(ValueError):
-    ...
+    """Raised when the file is deemed to be too large to download."""
 
 
 def stream_image(img_response):
@@ -206,13 +207,36 @@ def get_unread(args, hipchat_org, token):
             print('\n')
 
 
+class Emoticon(typing.NamedTuple):
+    image: bytes
+    url: str
+    created: str
+    is_custom: bool
+    creator: str
+
+
 def get_emoticon(args, hipchat_org, token):
+    emoticon_name = args.emoticon_name
     payload = get_api(
-        path=f'v2/emoticon/{args.emoticon_name}',
+        path=f'v2/emoticon/{emoticon_name}',
         hipchat_org=hipchat_org,
         token=token,
     )
 
+    emoticon = _get_emoticon(payload)
+    _print_emoticon_info(emoticon)
+
+    if emoticon.is_custom:
+        built_in = _get_built_in_emoticon(emoticon_name, hipchat_org, token)
+        if built_in:
+            print("\nShadows built-in emoticon...")
+            _print_emoticon_info(built_in)
+
+
+def _get_emoticon(payload):
+    """
+    Get Emoticon object from API payload.
+    """
     with contextlib.closing(requests.get(payload['url'], stream=True)) as img_response:
         last_modified = img_response.headers.get('Last-Modified')
         data = stream_image(img_response).getvalue()
@@ -223,10 +247,35 @@ def get_emoticon(args, hipchat_org, token):
     is_custom = bool(re.search(r'/emoticons/(\d+)/', payload['url']))
     creator = (payload.get('creator') or {}).get('name') or '< unknown >'
 
-    imgcat(data)
-    print("Url:     ", payload['url'])
-    print("Creator: ", creator if is_custom else f"{creator} (built-in)"),
-    print("Added on:", last_modified or 'unknown')
+    return Emoticon(
+        image=data,
+        url=payload['url'],
+        created=last_modified,
+        is_custom=is_custom,
+        creator=creator,
+    )
+
+
+def _print_emoticon_info(emoticon):
+    creator = emoticon.creator
+
+    imgcat(emoticon.image)
+    print("Url:     ", emoticon.url)
+    print("Creator: ", creator if emoticon.is_custom else f"{creator} (built-in)")
+    print("Added on:", emoticon.created or 'unknown')
+
+
+def _get_built_in_emoticon(emoticon_name, hipchat_org, token):
+    payload = get_api(
+        path=f'v2/emoticon?type=global&max-results=1000',
+        hipchat_org=hipchat_org,
+        token=token,
+    )
+
+    for emoticon_data in payload['items']:
+        if emoticon_data['shortcut'] == emoticon_name:
+            return _get_emoticon(emoticon_data)
+    return None
 
 
 def main():
