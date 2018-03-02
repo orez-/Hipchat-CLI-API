@@ -12,6 +12,7 @@ import time
 import typing
 
 import requests
+import requests.utils
 
 try:
     import ujson as json
@@ -74,8 +75,6 @@ def imgcat(data):
     else:
         sys.stdout.write(buf)
     sys.stdout.flush()
-
-    print()
 
 
 def get_api(path, hipchat_org, token):
@@ -156,11 +155,13 @@ def get_room_data(args, hipchat_org, token):
         hipchat_org=hipchat_org,
         token=token,
     )
+    link = f"hipchat://{hipchat_org}.hipchat.com/room/{requests.utils.quote(args.room_name)}"
 
     print("Id:      ", payload['id'])
     print("Name:    ", payload['name'])
     print("Owner:   ", payload['owner']['name'])
     print("Created: ", payload['created'])
+    print("Link:    ", link)
 
 
 def get_unread(args, hipchat_org, token):
@@ -260,6 +261,7 @@ def _print_emoticon_info(emoticon):
     creator = emoticon.creator
 
     imgcat(emoticon.image)
+    print()
     print("Url:     ", emoticon.url)
     print("Creator: ", creator if emoticon.is_custom else f"{creator} (built-in)")
     print("Added on:", emoticon.created or 'unknown')
