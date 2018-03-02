@@ -78,8 +78,10 @@ def imgcat(data):
 
 
 def get_api(path, hipchat_org, token):
+    if not path.startswith('https://'):
+        path = f'https://{hipchat_org}.hipchat.com/{path}'
     response = requests.get(
-        f'https://{hipchat_org}.hipchat.com/{path}',
+        path,
         headers={'Authorization': f'Bearer {token}'},
     )
     if response.status_code == 401:
@@ -87,6 +89,20 @@ def get_api(path, hipchat_org, token):
         raise Exit
     response.raise_for_status()
     return response.json()
+
+
+def get_api_items(path, hipchat_org, token):
+    """
+    Yield a list of items from the hipchat api by path, respecting pagination.
+    """
+    while path:
+        payload = get_api(
+            path=path,
+            hipchat_org=hipchat_org,
+            token=token,
+        )
+        yield from payload['items']
+        path = payload['links'].get('next')
 
 
 def get_by_xmpp_jid(xmpp_lookup, xmpp_jid):
@@ -111,7 +127,7 @@ def save_xmpp_cache(cache):
 
 def refresh_xmpp_cache(hipchat_org, token):
     print("Fetching xmpp data...")
-    payload = get_api(
+    payload = get_api_items(
         path='v2/room?expand=items&max-results=1000',
         hipchat_org=hipchat_org,
         token=token,
@@ -128,10 +144,10 @@ def refresh_xmpp_cache(hipchat_org, token):
             'is_archived': item['is_archived'],
             'last_active': item['last_active'],
         }
-        for item in payload['items']
+        for item in payload
     }
 
-    payload = get_api(
+    payload = get_api_items(
         path='v2/user?expand=items&max-results=1000',
         hipchat_org=hipchat_org,
         token=token,
@@ -143,7 +159,7 @@ def refresh_xmpp_cache(hipchat_org, token):
             'mention_name': item['mention_name'],
             'id': item['id'],
         }
-        for item in payload['items']
+        for item in payload
     })
     save_xmpp_cache(xmpp_lookup)
     return xmpp_lookup
@@ -166,7 +182,7 @@ def get_room_data(args, hipchat_org, token):
 
 def get_unread(args, hipchat_org, token):
     del args
-    payload = get_api(
+    payload = get_api(  # apparently not paginated
         path='v2/readstate?expand=items.unreadCount',
         hipchat_org=hipchat_org,
         token=token,
@@ -186,13 +202,13 @@ def get_unread(args, hipchat_org, token):
             continue
 
         mid = state['mid']
-        payload = get_api(
+        payload = get_api_items(
             path=f"v2/{convo['type']}/{convo['id']}/history/latest?not-before={mid}",
             hipchat_org=hipchat_org,
             token=token,
         )
         messages = []
-        for message in payload['items']:
+        for message in payload:
             # don't report on cards
             if message.get('card'):
                 continue
@@ -268,13 +284,13 @@ def _print_emoticon_info(emoticon):
 
 
 def _get_built_in_emoticon(emoticon_name, hipchat_org, token):
-    payload = get_api(
+    payload = get_api_items(
         path=f'v2/emoticon?type=global&max-results=1000',
         hipchat_org=hipchat_org,
         token=token,
     )
 
-    for emoticon_data in payload['items']:
+    for emoticon_data in payload:
         if emoticon_data['shortcut'] == emoticon_name:
             return _get_emoticon(emoticon_data)
     return None
