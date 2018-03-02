@@ -296,6 +296,21 @@ def _get_built_in_emoticon(emoticon_name, hipchat_org, token):
     return None
 
 
+def get_admins(args, hipchat_org, token):
+    users = get_api_items(
+        path='v2/user?expand=items&max-results=1000',
+        hipchat_org=hipchat_org,
+        token=token,
+    )
+
+    admins = [
+        user for user in users
+        if user['is_group_admin']
+    ]
+    for admin in admins:
+        print(f"- {admin['name']}  ( @{admin['mention_name']} )")
+
+
 def main():
     token = os.environ.get('HIPCHAT_TOKEN')
     hipchat_org = os.environ.get('HIPCHAT_ORG')
@@ -318,6 +333,9 @@ def main():
     emoticon_parser = subparsers.add_parser('emoticon', help="show emoticon")
     emoticon_parser.add_argument('emoticon_name', type=str)
     emoticon_parser.set_defaults(func=get_emoticon)
+
+    admin_parser = subparsers.add_parser('admin', help="view group admins")
+    admin_parser.set_defaults(func=get_admins)
 
     args = parser.parse_args()
     try:
