@@ -166,12 +166,13 @@ def refresh_xmpp_cache(hipchat_org, token):
 
 
 def get_room_data(args, hipchat_org, token):
+    quoted_room_name = requests.utils.quote(args.room_name)
     payload = get_api(
-        path=f'v2/room/{args.room_name}',
+        path=f'v2/room/{quoted_room_name}',
         hipchat_org=hipchat_org,
         token=token,
     )
-    link = f"hipchat://{hipchat_org}.hipchat.com/room/{requests.utils.quote(args.room_name)}"
+    link = f"hipchat://{hipchat_org}.hipchat.com/room/{quoted_room_name}"
 
     print("Id:      ", payload['id'])
     print("Name:    ", payload['name'])
