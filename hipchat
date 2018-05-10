@@ -317,6 +317,8 @@ def show_edits(args, hipchat_org, token):
         token=token,
     )
     modified_messages = collections.defaultdict(list)
+    # maps user ids to the last non-replacement message we've seen
+    # from them as we walk the message history
     last_messages = {}
     for item in payload:
         if item['type'] != 'message':
@@ -327,22 +329,22 @@ def show_edits(args, hipchat_org, token):
         if not message:
             continue
 
-        match = re.fullmatch(r's/([^/]+)/([^/]+)/?', message)
-        if match:
-            if from_id not in last_messages:
-                # found an s// replacement, but the message it's modifying
-                # is too far back; we didn't fetch it in our history
-                continue
-            modified_messages[last_messages[from_id]].append(match.groups())
-            continue
-
-        last_messages[from_id] = (item['id'], item['from']['name'], message)
+        edit_msg_match = re.fullmatch(r's/([^/]+)/([^/]+)/?', message)
+        if edit_msg_match:
+            # If this edit message is the first message we've found for
+            # this user, their original message must predate the history
+            # we pulled.
+            if from_id in last_messages:
+                # Otherwise, associate this replacement with the user's previous message.
+                modified_messages[last_messages[from_id]].append(edit_msg_match.groups())
+        else:
+            last_messages[from_id] = (item['from']['name'], message)
 
     _display_edits(modified_messages)
 
 
 def _display_edits(modified_messages):
-    for (_, name, message), edits in modified_messages.items():
+    for (name, message), edits in modified_messages.items():
         print(bold(name))
         for old, new in edits:
             print(message.replace(old, f"{af.format(1)}{old}{af.format(2)}{new}{clear}"))
