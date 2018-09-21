@@ -260,19 +260,26 @@ def _get_emoticon(payload):
     """
     Get Emoticon object from API payload.
     """
-    with contextlib.closing(requests.get(payload['url'], stream=True)) as img_response:
-        last_modified = img_response.headers.get('Last-Modified')
-        data = stream_image(img_response).getvalue()
+    url = payload['url']
+    url4x = rreplace(url, ".", "@4x.")
+    url2x = rreplace(url, ".", "@2x.")
+    for image_url in [url4x, url2x, url]:
+        with contextlib.closing(requests.get(image_url, stream=True)) as img_response:
+            if not img_response.ok:
+                continue
+            last_modified = img_response.headers.get('Last-Modified')
+            data = stream_image(img_response).getvalue()
+            break
 
     # very rough heuristic, but it's all we've got: if the url contains
     # an organization id it is custom, otherwise it is built-in.
     # Emoticons are only supposed to contain alphanumeric characters
-    is_custom = bool(re.search(r'/emoticons/(\d+)/', payload['url']))
+    is_custom = bool(re.search(r'/emoticons/(\d+)/', url))
     creator = (payload.get('creator') or {}).get('name') or '< unknown >'
 
     return Emoticon(
         image=data,
-        url=payload['url'],
+        url=url,
         created=last_modified,
         is_custom=is_custom,
         creator=creator,
@@ -300,6 +307,10 @@ def _get_built_in_emoticon(emoticon_name, hipchat_org, token):
         if emoticon_data['shortcut'] == emoticon_name:
             return _get_emoticon(emoticon_data)
     return None
+
+
+def rreplace(text, find, replace):
+    return replace.join(text.rsplit(find, 1))
 
 
 def show_edits(args, hipchat_org, token):
